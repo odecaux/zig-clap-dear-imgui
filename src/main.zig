@@ -47,7 +47,7 @@ const Gui = struct {
             defer c.ImGui_End();
 
             {
-                var str = std.fmt.allocPrintZ(global.allocator, "Sample Rate: {d:.2}", .{plug.sample_rate}) catch unreachable;
+                const str = std.fmt.allocPrintZ(global.allocator, "Sample Rate: {d:.2}", .{plug.sample_rate}) catch unreachable;
                 defer global.allocator.free(str);
                 c.ImGui_TextUnformatted(str.ptr);
             }
@@ -60,7 +60,7 @@ const Gui = struct {
             defer c.ImGui_End();
 
             const fields = std.meta.fields(Params.Values);
-            inline for (fields) |field, field_index| {
+            inline for (fields, 0..) |field, field_index| {
                 const meta = Params.value_metas[field_index];
 
                 c.ImGui_PushID(meta.name.ptr);
@@ -86,15 +86,15 @@ const Gui = struct {
                             @field(plug.params.values, field.name) = 1;
                         }
                         c.ImGui_SameLine();
-                        var value = @floatCast(f32, @field(plug.params.values, field.name));
+                        var value: f32 = @floatCast(@field(plug.params.values, field.name));
                         if (c.ImGui_DragFloatEx(meta.name.ptr, &value, 0.001, meta.min_value, meta.max_value, "%.3f", 0)) {
-                            @field(plug.params.values, field.name) = @floatCast(f64, value);
+                            @field(plug.params.values, field.name) = @floatCast(value);
                         }
                     },
                     else => {
-                        var value = @floatCast(f32, @field(plug.params.values, field.name));
+                        var value: f32 = @floatCast(@field(plug.params.values, field.name));
                         if (c.ImGui_DragFloatEx(meta.name.ptr, &value, 0.001, meta.min_value, meta.max_value, "%.3f", 0)) {
-                            @field(plug.params.values, field.name) = @floatCast(f64, value);
+                            @field(plug.params.values, field.name) = @floatCast(value);
                         }
                     },
                 }
@@ -190,7 +190,7 @@ const Gui = struct {
     // Show the window.
     // [main-thread]
     fn show(plugin: [*c]const c.clap_plugin_t) callconv(.C) bool {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         platformGuiShow(plug.platform_gui_data);
         return true;
     }
@@ -199,7 +199,7 @@ const Gui = struct {
     // the window content. Yet it may be a good idea to stop painting timers.
     // [main-thread]
     fn hide(plugin: [*c]const c.clap_plugin_t) callconv(.C) bool {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         platformGuiHide(plug.platform_gui_data);
         return true;
     }
@@ -207,21 +207,21 @@ const Gui = struct {
     fn guiCreate(plugin: [*c]const c.clap_plugin_t, api: [*c]const u8, is_floating: bool) callconv(.C) bool {
         _ = api;
         _ = is_floating;
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         platformGuiCreate(&plug.platform_gui_data, plugin, plug.gui.client_width, plug.gui.client_height);
         return true;
     }
     fn guiDestroy(plugin: [*c]const c.clap_plugin_t) callconv(.C) void {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         platformGuiDestroy(plug.platform_gui_data);
     }
     fn guiSetParent(plugin: [*c]const c.clap_plugin_t, window: [*c]const c.clap_window_t) callconv(.C) bool {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         platformGuiSetParent(plug.platform_gui_data, window);
         return true;
     }
     fn guiSetSize(plugin: [*c]const c.clap_plugin_t, width: u32, height: u32) callconv(.C) bool {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         plug.gui.client_width = width;
         plug.gui.client_height = height;
         platformGuiSetSize(plug.platform_gui_data, width, height);
@@ -348,7 +348,7 @@ pub const Params = struct {
 
     fn idToValueIndex(id: u32) !usize {
         const fields = std.meta.fields(Values);
-        inline for (fields) |_, field_index| {
+        inline for (fields, 0..) |_, field_index| {
             if (value_metas[field_index].id == id) {
                 return field_index;
             }
@@ -357,7 +357,7 @@ pub const Params = struct {
     }
     fn idToValue(self: Params, id: u32) !f64 {
         const fields = std.meta.fields(Values);
-        inline for (fields) |field, field_index| {
+        inline for (fields, 0..) |field, field_index| {
             if (value_metas[field_index].id == id) {
                 return @field(self.values, field.name);
             }
@@ -366,7 +366,7 @@ pub const Params = struct {
     }
     fn idToValuePtr(self: *Params, id: u32) !*f64 {
         const fields = std.meta.fields(Values);
-        inline for (fields) |field, field_index| {
+        inline for (fields, 0..) |field, field_index| {
             if (value_metas[field_index].id == id) {
                 return &@field(self.values, field.name);
             }
@@ -387,13 +387,14 @@ pub const Params = struct {
                 const field = fields[comptime_index];
                 var flags: u32 = if (value_metas[index].t == .Bool) c.CLAP_PARAM_IS_STEPPED else 0;
                 flags |= c.CLAP_PARAM_IS_AUTOMATABLE;
+                const default_value_ptr: *align(@alignOf(field.type)) const f64 = @ptrCast(@alignCast(field.default_value.?));
                 info.* = .{
                     .id = value_metas[index].id,
                     .name = undefined,
                     .module = undefined,
                     .min_value = value_metas[index].min_value,
                     .max_value = value_metas[index].max_value,
-                    .default_value = @ptrCast(*const f64, @alignCast(@alignOf(field.field_type), field.default_value.?)).*,
+                    .default_value = default_value_ptr.*,
                     .flags = flags,
                     .cookie = null,
                 };
@@ -417,8 +418,8 @@ pub const Params = struct {
     }
     fn value_to_text(plugin: [*c]const c.clap_plugin_t, id: c.clap_id, value: f64, buf_ptr: [*c]u8, buf_size: u32) callconv(.C) bool {
         _ = plugin;
-        var buf: []u8 = buf_ptr[0..buf_size];
-        var index = idToValueIndex(id) catch {
+        const buf: []u8 = buf_ptr[0..buf_size];
+        const index = idToValueIndex(id) catch {
             return false;
         };
         switch (value_metas[index].t) {
@@ -426,7 +427,7 @@ pub const Params = struct {
                 _ = std.fmt.bufPrintZ(buf, "{s}", .{if (value == 0.0) "false" else "true"}) catch unreachable;
             },
             .VolumeAmp => {
-                const display = util.amplitudeTodB(@floatCast(f32, value));
+                const display = util.amplitudeTodB(@floatCast(value));
                 _ = std.fmt.bufPrintZ(buf, "{d:.4} dB", .{display}) catch unreachable;
             },
             .TimeMilliseconds => {
@@ -440,7 +441,7 @@ pub const Params = struct {
     }
     fn text_to_value(plugin: [*c]const c.clap_plugin_t, id: c.clap_id, display: [*c]const u8, out: [*c]f64) callconv(.C) bool {
         _ = plugin;
-        var index = idToValueIndex(id) catch {
+        const index = idToValueIndex(id) catch {
             return false;
         };
         switch (value_metas[index].t) {
@@ -451,7 +452,7 @@ pub const Params = struct {
             .VolumeAmp => {
                 const str: []const u8 = blk: {
                     var str: []const u8 = std.mem.span(display);
-                    str.len = for (str) |char, char_index| {
+                    str.len = for (str, 0..) |char, char_index| {
                         if (char == ' ') {
                             break char_index;
                         }
@@ -465,7 +466,7 @@ pub const Params = struct {
             else => {
                 const str: []const u8 = blk: {
                     var str: []const u8 = std.mem.span(display);
-                    str.len = for (str) |char, char_index| {
+                    str.len = for (str, 0..) |char, char_index| {
                         if (char == ' ') {
                             break char_index;
                         }
@@ -507,7 +508,7 @@ pub const Params = struct {
     fn serialize(self: Params, stream: *const c.clap_ostream_t) !void {
         const fields = std.meta.fields(Values);
         try State.write(stream, fields.len);
-        inline for (fields) |field, field_index| {
+        inline for (fields, 0..) |field, field_index| {
             try State.write(stream, Params.value_metas[field_index].id);
             try State.write(stream, @field(self.values, field.name));
         }
@@ -521,7 +522,7 @@ pub const Params = struct {
         while (i < num_values) : (i += 1) {
             const id = try State.read(stream, u32);
             read_bytes += @sizeOf(u32);
-            inline for (value_metas) |meta, meta_index| {
+            inline for (value_metas, 0..) |meta, meta_index| {
                 if (id == meta.id) {
                     @field(self.values, fields[meta_index].name) = try State.read(stream, f64);
                     read_bytes += @sizeOf(f64);
@@ -542,7 +543,7 @@ pub const Params = struct {
         }).* = value;
     }
     pub fn setValueTellHost(self: *Params, comptime field_name: []const u8, value: f64, time: u32, out_events: *const c.clap_output_events_t) void {
-        const param_id = Params.value_metas[@intCast(u32, std.meta.fieldIndex(Params.Values, field_name).?)].id;
+        const param_id = Params.value_metas[@intCast(std.meta.fieldIndex(Params.Values, field_name).?)].id;
 
         self.setValue(param_id, value);
 
@@ -637,7 +638,7 @@ const AudioPorts = struct {
 
 const Latency = struct {
     fn get(plugin: [*c]const c.clap_plugin_t) callconv(.C) u32 {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         return plug.*.latency;
     }
 
@@ -678,7 +679,7 @@ const State = struct {
     }
 
     fn save(plugin: [*c]const c.clap_plugin_t, stream: [*c]const c.clap_ostream_t) callconv(.C) bool {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         saveInner(plug, stream) catch {
             return false;
         };
@@ -686,7 +687,7 @@ const State = struct {
     }
 
     fn load(plugin: [*c]const c.clap_plugin_t, stream: [*c]const c.clap_istream_t) callconv(.C) bool {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
         loadInner(plug, stream) catch {
             return false;
         };
@@ -701,11 +702,11 @@ const State = struct {
         try write(stream, @as(u32, 2));
 
         try write(stream, section_id_params);
-        try write(stream, @intCast(u64, plug.params.serializedSize()));
+        try write(stream, @as(u64, @intCast(plug.params.serializedSize())));
         try plug.params.serialize(stream);
 
         try write(stream, section_id_gui);
-        try write(stream, @intCast(u64, plug.gui.serializedSize()));
+        try write(stream, @as(u64, @intCast(plug.gui.serializedSize())));
         try plug.gui.serialize(stream);
     }
     fn loadInner(plug: *MyPlugin, stream: [*c]const c.clap_istream_t) !void {
@@ -778,30 +779,30 @@ pub const MyPlugin = struct {
     };
 
     fn init(plugin: [*c]const c.clap_plugin_t) callconv(.C) bool {
-        var plug = c_cast(*MyPlugin, plugin.*.plugin_data);
+        const plug = c_cast(*MyPlugin, plugin.*.plugin_data);
 
         // Fetch host's extensions here
         {
-            var ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_LOG);
+            const ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_LOG);
             if (ptr != null) {
                 plug.*.hostLog = c_cast(*const c.clap_host_log_t, ptr);
                 plug.*.hostLog.?.*.log.?(plug.*.host, c.CLAP_LOG_DEBUG, "this is something I am logging");
             }
         }
         {
-            var ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_THREAD_CHECK);
+            const ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_THREAD_CHECK);
             if (ptr != null) {
                 plug.*.hostThreadCheck = c_cast(*const c.clap_host_thread_check_t, ptr);
             }
         }
         {
-            var ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_LATENCY);
+            const ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_LATENCY);
             if (ptr != null) {
                 plug.*.hostLatency = c_cast(*const c.clap_host_latency_t, ptr);
             }
         }
         {
-            var ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_PARAMS);
+            const ptr = plug.*.host.*.get_extension.?(plug.*.host, &c.CLAP_EXT_PARAMS);
             if (ptr != null) {
                 plug.*.hostParams = c_cast(*const c.clap_host_params_t, ptr);
             }
@@ -915,8 +916,8 @@ pub const MyPlugin = struct {
 
         plug.tempo = process.*.transport.*.tempo;
 
-        const pos_seconds = @intToFloat(f64, process.*.transport.*.song_pos_seconds) / @intToFloat(f64, @as(i64, 1 << 31));
-        block_sample_start = @floatToInt(usize, std.math.round(pos_seconds * plug.sample_rate));
+        const pos_seconds: f64 = @as(f64, @floatFromInt(process.*.transport.*.song_pos_seconds)) / @as(f64, @floatFromInt(@as(i64, 1 << 31)));
+        block_sample_start = @intFromFloat(std.math.round(pos_seconds * plug.sample_rate));
         on_block_sample = 0;
 
         const num_frames = process.*.frames_count;
@@ -943,12 +944,12 @@ pub const MyPlugin = struct {
                 }
             }
 
-            const gain_main = @floatCast(f32, plug.params.values.gain_amplitude_main);
-            const a0 = @floatCast(f32, plug.params.values.a0);
-            const a1 = @floatCast(f32, plug.params.values.a1);
-            const a2 = @floatCast(f32, plug.params.values.a2);
-            const b1 = @floatCast(f32, plug.params.values.b1);
-            const b2 = @floatCast(f32, plug.params.values.b2);
+            const gain_main: f32 = @floatCast(plug.params.values.gain_amplitude_main);
+            const a0: f32 = @floatCast(plug.params.values.a0);
+            const a1: f32 = @floatCast(plug.params.values.a1);
+            const a2: f32 = @floatCast(plug.params.values.a2);
+            const b1: f32 = @floatCast(plug.params.values.b1);
+            const b2: f32 = @floatCast(plug.params.values.b2);
 
             while (frame_index < next_event_frame) : (frame_index += 1) {
                 // generate noise
@@ -960,7 +961,7 @@ pub const MyPlugin = struct {
                 };
 
                 // biquad filter
-                var y_n = [2]f32{
+                const y_n = [2]f32{
                     (x_n[0] * a0) + (x_n_minus_1[0] * a1) + (x_n_minus_2[0] * a2) - (y_n_minus_1[0] * b1) - (y_n_minus_2[0] * b2),
                     (x_n[1] * a0) + (x_n_minus_1[1] * a1) + (x_n_minus_2[1] * a2) - (y_n_minus_1[1] * b1) - (y_n_minus_2[1] * b2),
                 };
@@ -1021,7 +1022,7 @@ const Factory = struct {
         if (!clap_version_is_compatible(host.*.clap_version)) {
             return null;
         }
-        if (std.cstr.cmp(plugin_id, MyPlugin.desc.id) == 0) {
+        if (std.mem.orderZ(u8, plugin_id, MyPlugin.desc.id) == .eq) {
             return MyPlugin.create(host);
         }
         return null;
@@ -1052,7 +1053,7 @@ const Entry = struct {
     }
     fn deinit() callconv(.C) void {}
     fn get_factory(factory_id: [*c]const u8) callconv(.C) ?*const anyopaque {
-        if (std.cstr.cmp(factory_id, &c.CLAP_PLUGIN_FACTORY_ID) == 0) {
+        if (std.mem.orderZ(u8, factory_id, &c.CLAP_PLUGIN_FACTORY_ID) == .eq) {
             return &Factory.Data;
         }
         return null;
