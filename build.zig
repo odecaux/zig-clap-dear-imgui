@@ -11,18 +11,21 @@ pub fn build(b: *std.build.Builder) void {
 
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addSharedLibrary("clap-imgui", "src/main.zig", .unversioned);
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
+    const exe = b.addSharedLibrary(.{
+        .name = "clap-imgui",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = .{ .path = "src/main.zig" },
+    });
     exe.linkLibC();
     exe.linkLibCpp();
-    exe.addIncludePath("clap/include");
-    exe.addIncludePath("src");
-    exe.addIncludePath("dear_bindings");
-    exe.addIncludePath("imgui");
-    exe.addIncludePath("imgui/backends");
+    exe.addIncludePath(.{ .cwd_relative = "clap/include" });
+    exe.addIncludePath(.{ .cwd_relative = "src" });
+    exe.addIncludePath(.{ .cwd_relative = "dear_bindings" });
+    exe.addIncludePath(.{ .cwd_relative = "imgui/backends" });
+    exe.addIncludePath(.{ .cwd_relative = "imgui" });
     exe.addCSourceFiles(&[_][]const u8{
         "imgui/imgui.cpp",
         "imgui/imgui_demo.cpp",
@@ -52,7 +55,6 @@ pub fn build(b: *std.build.Builder) void {
         exe.linkFramework("MetalKit");
         exe.linkFramework("GameController");
     }
-    exe.install();
 
     const rename_dll_step = CreateClapPluginStep.create(b, exe);
     b.getInstallStep().dependOn(&rename_dll_step.step);
@@ -72,22 +74,29 @@ pub const CreateClapPluginStep = struct {
         const name = "create clap plugin";
 
         self.* = Self{
-            .step = Step.init(.top_level, name, builder.allocator, make),
+            .step = std.Build.Step.init(.{
+                .id = .top_level,
+                .name = name,
+                .owner = builder,
+                .makeFn = make,
+            }),
             .builder = builder,
             .artifact = artifact,
         };
 
-        self.step.dependOn(&artifact.step);
+        const install = builder.addInstallArtifact(artifact, .{});
+        self.step.dependOn(&install.step);
         return self;
     }
 
-    fn make(step: *Step) !void {
+    fn make(step: *std.Build.Step, prog_node: *std.Progress.Node) !void {
+        _ = prog_node;
         const self = @fieldParentPtr(Self, "step", step);
         if (self.artifact.target.isWindows()) {
-            var dir = try std.fs.openDirAbsolute(self.builder.build_root, .{});
+            var dir = try std.fs.openDirAbsolute(self.builder.build_root.path.?, .{});
             _ = try dir.updateFile("zig-out/lib/clap-imgui.dll", dir, "zig-out/lib/clap-imgui.dll.clap", .{});
         } else if (self.artifact.target.isDarwin()) {
-            var dir = try std.fs.openDirAbsolute(self.builder.build_root, .{});
+            var dir = try std.fs.openDirAbsolute(self.builder.build_root.path.?, .{});
             _ = try dir.updateFile("zig-out/lib/libclap-imgui.dylib", dir, "zig-out/lib/Clap Imgui.clap/Contents/MacOS/Clap Imgui", .{});
             _ = try dir.updateFile("macos/info.plist", dir, "zig-out/lib/Clap Imgui.clap/Contents/info.plist", .{});
             _ = try dir.updateFile("macos/PkgInfo", dir, "zig-out/lib/Clap Imgui.clap/Contents/PkgInfo", .{});
